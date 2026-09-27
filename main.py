@@ -1,5 +1,3 @@
-# CAP776 Minor Project #1
-# Uses openpyxl only. No pandas or numpy.
 
 from datetime import date
 from math import sqrt
@@ -7,7 +5,7 @@ from openpyxl import load_workbook
 
 
 FILE_NAME = __file__.replace("main.py", "12601472.xlsx")
-START_ROW = 6                 # Daily entries start from row 6 in the given template
+START_ROW = 6                 
 START_DATE = date(2026, 8, 13)
 END_DATE = date(2026, 9, 20)
 EXPECTED_DAYS = (END_DATE - START_DATE).days + 1
