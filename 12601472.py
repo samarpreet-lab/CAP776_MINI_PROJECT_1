@@ -1,3 +1,4 @@
+
 from datetime import date, datetime
 from math import sqrt
 from openpyxl import load_workbook
@@ -13,29 +14,29 @@ END_DATE = date(2026, 9, 21)
 EXPECTED_DAYS = (END_DATE - START_DATE).days + 1
 MINUTES = 1440
 
+# Smallest |r| that counts as more than chance at the 5% level, read from the
+# standard Pearson critical-value table for 40 paired days (38 degrees of freedom).
+R_CUTOFF = 0.31
+
 FEELING = {"Excellent": 5, "Good": 4, "Neutral": 3, "Low": 2, "Stressed": 1}
-SATISFACTION = {"Very Satisfied": 5, "Satisfied": 4, "Neutral": 3,"Unsatisfied": 2, "Very Unsatisfied": 1}
+SATISFACTION = {"Very Satisfied": 5, "Satisfied": 4, "Neutral": 3,
+                "Unsatisfied": 2, "Very Unsatisfied": 1}
 ENERGY = {"High": 3, "Medium": 2, "Low": 1}
 
-# Which column each value sits in (0 is the first column of the sheet).
 TIME_COLS = {"sleep": 1, "fitness": 2, "study": 3,
              "coding": 4, "class": 5, "other": 7}
 RATING_COLS = {"feeling": 10, "satisfaction": 11, "energy": 12}
 SCALES = {"feeling": FEELING, "satisfaction": SATISFACTION, "energy": ENERGY}
 
-# Weights used in the PAI formula (they add up to 1.00).
 WEIGHTS = {"TPI": 0.15, "AAI": 0.20, "PhAI": 0.15, "SRI": 0.20,
            "TUI": 0.15, "EI": 0.10, "DCI": 0.05}
 
-# The relationships to work out: title, first list, second list, kind.
 PAIRS = [("Sleep - Energy", "sleep", "energy", "required"),
          ("Study - Satisfaction", "study", "satisfaction", "required"),
          ("Coding - Energy", "coding", "energy", "required"),
          ("Total Tracked Time - Energy", "total", "energy", "extra"),
-         ("Class Time - Satisfaction", "class", "satisfaction", "extra"),
-         ("Free Time - Feeling", "free", "feeling", "extra")]
+         ("Class Time - Satisfaction", "class", "satisfaction", "extra")]
 
-# Names and units used when printing.
 LABELS = {"sleep": "Sleep", "fitness": "Fitness", "study": "Study",
           "coding": "Coding", "class": "Class", "other": "Other Activities",
           "free": "Free / Unaccounted Time"}
@@ -44,22 +45,19 @@ INDEX_UNITS = {"PAI": "", "TPI": "min/day", "AAI": "min/day", "PhAI": "min/day",
                "EI": "/ 5", "DCI": "%"}
 
 def average(values):
-    """Return the mean of a list of numbers."""
     return sum(values) / len(values)
 
 def correlation(x, y):
-    """Return the Pearson correlation coefficient of two equal-sized lists."""
     x_mean = average(x)
     y_mean = average(y)
     top = sum((a - x_mean) * (b - y_mean) for a, b in zip(x, y))
     left = sum((a - x_mean) ** 2 for a in x)
     right = sum((b - y_mean) ** 2 for b in y)
-    if left == 0 or right == 0:          # a column that never changes
+    if left == 0 or right == 0:
         return 0.0
     return top / sqrt(left * right)
 
 def strength(r):
-    """Return a simple word describing how strong a correlation is."""
     size = abs(r)
     if size < 0.20:
         return "negligible"
@@ -72,7 +70,6 @@ def strength(r):
     return word + (" positive" if r > 0 else " negative")
 
 def read_date(value):
-    """Turn a cell into a date. Raises an error if the cell is not a date."""
     if isinstance(value, datetime):
         return value.date()
     if isinstance(value, date):
@@ -80,14 +77,12 @@ def read_date(value):
     return datetime.strptime(str(value).strip()[:10], "%Y-%m-%d").date()
 
 def read_minutes(value):
-    """Turn a cell into a number of minutes between 0 and 1440."""
-    minutes = float(value)               # fails if the cell is not a number
+    minutes = float(value)
     if minutes < 0 or minutes > MINUTES:
         raise ValueError("value is outside 0-1440 minutes")
     return minutes
 
 def find_missing_days(recorded):
-    """Return the expected dates that were not recorded."""
     missing = []
     for step in range(EXPECTED_DAYS):
         day = date.fromordinal(START_DATE.toordinal() + step)
@@ -95,10 +90,7 @@ def find_missing_days(recorded):
             missing.append(day)
     return missing
 
-# ------------------------------------------------------------- reading data
-
 def open_sheet():
-    """Open the workbook and return the Daily Log sheet, or None if it fails."""
     try:
         book = load_workbook(FILE_NAME, data_only=True)
     except FileNotFoundError:
@@ -112,19 +104,15 @@ def open_sheet():
     return book.active
 
 def read_data(sheet):
-    """Read and check every row, keeping only rows whose values are all
-    present and sensible, so problems are counted and never assumed."""
     names = list(TIME_COLS) + list(RATING_COLS) + ["total", "free"]
     data = {name: [] for name in names}
     accepted = set()
     problems = []
     row_number = START_ROW - 1
-
     for row in sheet.iter_rows(min_row=START_ROW, values_only=True):
         row_number = row_number + 1
-        if row[0] is None:               # ignore empty rows
+        if row[0] is None:
             continue
-
         try:
             day = read_date(row[0])
             record = {}
@@ -135,11 +123,8 @@ def read_data(sheet):
         except (TypeError, ValueError, KeyError, IndexError) as error:
             problems.append("row %d : %s" % (row_number, error))
             continue
-
-        # Total and free time are worked out from the activity values.
         record["total"] = sum(record[name] for name in TIME_COLS)
         record["free"] = MINUTES - record["total"]
-
         if day < START_DATE or day > END_DATE:
             problems.append("row %d : date %s is outside the period" % (row_number, day))
         elif day in accepted:
@@ -151,11 +136,9 @@ def read_data(sheet):
             accepted.add(day)
             for name in names:
                 data[name].append(record[name])
-
     return data, accepted, problems
 
 def calculate_indexes(data, valid_days):
-    """Work out all nine indexes and return them in a dictionary."""
     academic = [data["study"][i] + data["class"][i] for i in range(valid_days)]
     experience = [(data["feeling"][i] + data["satisfaction"][i] +
                    data["energy"][i]) / 3 for i in range(valid_days)]
@@ -171,7 +154,6 @@ def calculate_indexes(data, valid_days):
     return indexes
 
 def calculate_correlations(data):
-    """Work out r and a strength word for every pair listed in PAIRS."""
     results = []
     for title, first, second, kind in PAIRS:
         r = correlation(data[first], data[second])
@@ -179,7 +161,6 @@ def calculate_correlations(data):
     return results
 
 def print_summary(data, accepted, problems):
-    """Print section 1 of the report."""
     missing = find_missing_days(accepted)
     print("\n1. ACTIVITY DATA SUMMARY")
     print("Expected number of days:", EXPECTED_DAYS)
@@ -194,24 +175,22 @@ def print_summary(data, accepted, problems):
         print(f"Average {LABELS[name]}/day: {average(data[name]):.2f} min/day")
 
 def print_indexes(indexes):
-    """Print section 2 of the report."""
     print("\n2. INDEX VALUES")
-    for name in INDEX_UNITS:               # already in the right order
+    for name in INDEX_UNITS:
         print(f"{name}: {indexes[name]:.2f} {INDEX_UNITS[name]}".rstrip())
     print(f"Check: TUI + ABI = {indexes['TUI'] + indexes['ABI']:.2f} "
           f"minutes (must be {MINUTES})")
 
 def print_correlations(results):
-    """Print sections 3 and 4 of the report."""
     for heading, wanted in [("\n3. REQUIRED CORRELATIONS", "required"),
                             ("\n4. ADDITIONAL CORRELATIONS", "extra")]:
         print(heading)
         for title, r, word, kind in results:
             if kind == wanted:
-                print(f"{title}: {r:.2f} ({word})")
+                clears = "clears" if abs(r) > R_CUTOFF else "below"
+                print(f"{title}: {r:.2f} ({word}, {clears} the {R_CUTOFF:.2f} cut-off)")
 
 def main():
-    """Run the complete analysis."""
     sheet = open_sheet()
     if sheet is None:
         return
